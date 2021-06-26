@@ -1,0 +1,25 @@
+{
+  "name": "smarthome-washer",
+  "description": "Codelab for controlling devices through the Google Assistant",
+  "engines": {
+    "node": "12"
+  },
+  "scripts": {
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "node-forge": "^0.10.0",
+    "axios": "^0.21.1",
+    "json-bigint": "^1.0.0",
+    "actions-on-google": "^2.14.0",
+    "cors": "^2.8.5",
+    "firebase-admin": "^9.10.0",
+    "firebase-functions": "^3.14.1",
+    "googleapis": "^78.0.0"
+  },
+  "private": true,
+  "devDependencies": {
+    "eslint": "^7.29.0",
+    "eslint-config-google": "^0.14.0"
+  }
+}
