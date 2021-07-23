@@ -101,64 +101,86 @@ exports.faketoken = functions.https.onRequest((request, response) => {
 
 const app = smarthome();
 
+/**
+ * A SYNC intent
+ * occurs when the Assistant wants to know what devices the user has connected.
+ * This is sent to your service when the user links an account.
+ * You should respond with a JSON payload of all the user's devices and their capabilities.
+ */
 app.onSync((body) => {
   return {
     requestId: body.requestId,
     payload: {
       agentUserId: USER_ID,
       devices: [{
-        id: 'washer',
-        type: 'action.devices.types.WASHER',
+
+        id: 'curtain',
+        type: 'action.devices.types.SWITCH',
         traits: [
-          'action.devices.traits.OnOff',
-          'action.devices.traits.StartStop',
-          'action.devices.traits.RunCycle',
+          // OpenClose need secondary user verification
+          // see: https://developers.google.com/assistant/smarthome/traits/openclose?hl=ja
+          //'action.devices.traits.OpenClose'
+          'action.devices.traits.OnOff'
         ],
         name: {
-          defaultNames: ['My Washer'],
-          name: 'Washer',
-          nicknames: ['Washer'],
+          defaultNames: ['My Curtain'],
+          name: 'Curtain',
+          nicknames: ['Curtain'],
         },
         deviceInfo: {
-          manufacturer: 'Acme Co',
-          model: 'acme-washer',
-          hwVersion: '1.0',
-          swVersion: '1.0.1',
+          manufacturer: 'My Smart Curtain',
         },
         willReportState: true,
         attributes: {
-          pausable: true,
         },
       }],
     },
   };
 });
 
+/**
+ * public ディレクトリ（UI）を消したので、代わりにレコードを初回作成する必要がある。
+ * instead of below
+ * https://github.com/googlecodelabs/smarthome-debug/blob/708016fba05ba43646b8dde864cb4ce12deff04c/washer-done/public/main.js#L91
+ */
+const setFirebase = async (deviceId) => {
+  const OnOffDef = false; // close
+  const pkg = {
+    OnOff: {on: OnOffDef},
+  };
+  await firebaseRef.child(deviceId).set(pkg);
+  return OnOffDef;
+}
+
+// see: https://firebase.google.com/docs/database/web/read-and-write?hl=ja
 const queryFirebase = async (deviceId) => {
   const snapshot = await firebaseRef.child(deviceId).once('value');
   const snapshotVal = snapshot.val();
+  let on = false;
+
+  if (snapshotVal == null) {
+    on = await setFirebase(deviceId);
+  } else {
+    on = snapshotVal.OnOff.on;
+  }
+
   return {
-    on: snapshotVal.OnOff.on,
-    isPaused: snapshotVal.StartStop.isPaused,
-    isRunning: snapshotVal.StartStop.isRunning,
+    on: on
   };
 };
+
 const queryDevice = async (deviceId) => {
   const data = await queryFirebase(deviceId);
   return {
     on: data.on,
-    isPaused: data.isPaused,
-    isRunning: data.isRunning,
-    currentRunCycle: [{
-      currentCycle: 'rinse',
-      nextCycle: 'spin',
-      lang: 'en',
-    }],
-    currentTotalRemainingTime: 1212,
-    currentCycleRemainingTime: 301,
   };
 };
 
+/**
+ * A QUERY intent
+ * occurs when the Assistant wants to know the current state or status of a device.
+ * You should respond with a JSON payload with the state of each requested device.
+ */
 app.onQuery(async (body) => {
   const {requestId} = body;
   const payload = {
@@ -187,17 +209,10 @@ const updateDevice = async (execution, deviceId) => {
   const {params, command} = execution;
   let state; let ref;
   switch (command) {
+    // see: https://developers.google.com/assistant/smarthome/traits/onoff?hl=ja
     case 'action.devices.commands.OnOff':
       state = {on: params.on};
       ref = firebaseRef.child(deviceId).child('OnOff');
-      break;
-    case 'action.devices.commands.StartStop':
-      state = {isRunning: params.start};
-      ref = firebaseRef.child(deviceId).child('StartStop');
-      break;
-    case 'action.devices.commands.PauseUnpause':
-      state = {isPaused: params.pause};
-      ref = firebaseRef.child(deviceId).child('StartStop');
       break;
   }
 
@@ -205,8 +220,14 @@ const updateDevice = async (execution, deviceId) => {
       .then(() => state);
 };
 
+/**
+ * An EXECUTE intent
+ * occurs when the Assistant wants to control a device on a user's behalf.
+ * You should respond with a JSON payload with the execution status of each requested device.
+ */
 app.onExecute(async (body) => {
   const {requestId} = body;
+  functions.logger.log(`app.onExecute ${body}`);
   // Execution results are grouped by status
   const result = {
     ids: [],
@@ -241,6 +262,11 @@ app.onExecute(async (body) => {
   };
 });
 
+/**
+ * An DISCONNECT intent
+ * occurs when the user unlinks their account from the Assistant.
+ * You should stop sending events for this user's devices to the Assistant.
+ */
 app.onDisconnect((body, headers) => {
   functions.logger.log('User account unlinked from Google Assistant');
   // Return empty response
@@ -281,11 +307,9 @@ exports.reportstate = functions.database.ref('{deviceId}').onWrite(
         payload: {
           devices: {
             states: {
-              /* Report the current state of our washer */
+              /* Report the current state of our curtain */
               [context.params.deviceId]: {
                 on: snapshot.OnOff.on,
-                isPaused: snapshot.StartStop.isPaused,
-                isRunning: snapshot.StartStop.isRunning,
               },
             },
           },
@@ -297,4 +321,3 @@ exports.reportstate = functions.database.ref('{deviceId}').onWrite(
       });
       functions.logger.info('Report state response:', res.status, res.data);
     });
-
